@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -13,15 +15,16 @@ import (
 	"time"
 
 	"github.com/hirochachacha/go-smb2"
+	"sort"
 )
 
 type smbOptions struct {
-	address string
-	share   string
-	user    string
+	address  string
+	share    string
+	user     string
 	password string
-	domain  string
-	timeout time.Duration
+	domain   string
+	timeout  time.Duration
 }
 
 func main() {
@@ -39,26 +42,36 @@ func main() {
 		opts.password = os.Getenv("SMB_PASSWORD")
 	}
 
-	if opts.address == "" || opts.share == "" || opts.user == "" || opts.password == "" {
-		fmt.Fprintln(os.Stderr, "server, share, user, and password are required")
-		flag.Usage()
-		os.Exit(2)
-	}
-
 	args := flag.Args()
 	if len(args) < 1 {
 		printUsage()
 		os.Exit(2)
 	}
 
-	share, cleanup, err := connect(opts)
-	if err != nil {
-		log.Fatalf("failed to connect: %v", err)
+	if opts.address == "" || opts.user == "" || opts.password == "" {
+		fmt.Fprintln(os.Stderr, "server, user, and password are required")
+		flag.Usage()
+		os.Exit(2)
 	}
-	defer cleanup()
 
-	switch args[0] {
+	command := args[0]
+	if command != "shares" && opts.share == "" {
+		fmt.Fprintln(os.Stderr, "share is required for this command")
+		flag.Usage()
+		os.Exit(2)
+	}
+
+	switch command {
+	case "shares":
+		if err := listShares(opts); err != nil {
+			log.Fatalf("shares failed: %v", err)
+		}
 	case "ls":
+		share, cleanup, err := connect(opts)
+		if err != nil {
+			log.Fatalf("failed to connect: %v", err)
+		}
+		defer cleanup()
 		remote := "."
 		if len(args) > 1 {
 			remote = args[1]
@@ -67,6 +80,11 @@ func main() {
 			log.Fatalf("ls failed: %v", err)
 		}
 	case "get":
+		share, cleanup, err := connect(opts)
+		if err != nil {
+			log.Fatalf("failed to connect: %v", err)
+		}
+		defer cleanup()
 		if len(args) != 3 {
 			printUsage()
 			os.Exit(2)
@@ -75,6 +93,11 @@ func main() {
 			log.Fatalf("get failed: %v", err)
 		}
 	case "put":
+		share, cleanup, err := connect(opts)
+		if err != nil {
+			log.Fatalf("failed to connect: %v", err)
+		}
+		defer cleanup()
 		if len(args) != 3 {
 			printUsage()
 			os.Exit(2)
@@ -93,20 +116,56 @@ func printUsage() {
   smbput -server HOST[:PORT] -share NAME -user USER -password PASS <command> [args...]
 
 Commands:
+  shares
   ls [REMOTE PATH]
   get REMOTE_PATH LOCAL_PATH
   put LOCAL_PATH REMOTE_PATH`)
 }
 
 func connect(opts smbOptions) (*smb2.Share, func(), error) {
-	address := opts.address
-	if !strings.Contains(address, ":") {
-		address = net.JoinHostPort(address, "445")
+	session, cleanup, err := dialSession(opts)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	conn, err := net.DialTimeout("tcp", address, opts.timeout)
+	share, err := session.Mount(opts.share)
 	if err != nil {
-		return nil, nil, fmt.Errorf("dial %s: %w", address, err)
+		cleanup()
+		return nil, nil, fmt.Errorf("mount share %s: %w", opts.share, err)
+	}
+
+	return share, func() {
+		share.Umount()
+		cleanup()
+	}, nil
+}
+
+func dialSession(opts smbOptions) (*smb2.Session, func(), error) {
+	host, port, err := splitServerAddress(opts.address)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), opts.timeout)
+	defer cancel()
+
+	ips, err := resolveHost(ctx, host, opts.timeout)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve host %s: %w", host, err)
+	}
+
+	tcpDialer := &net.Dialer{Timeout: opts.timeout}
+	var conn net.Conn
+	var dialErr error
+	for _, ip := range ips {
+		address := net.JoinHostPort(ip.String(), port)
+		conn, dialErr = tcpDialer.DialContext(ctx, "tcp", address)
+		if dialErr == nil {
+			break
+		}
+	}
+	if dialErr != nil {
+		return nil, nil, fmt.Errorf("dial %s:%s: %w", host, port, dialErr)
 	}
 
 	dialer := &smb2.Dialer{
@@ -123,20 +182,12 @@ func connect(opts smbOptions) (*smb2.Share, func(), error) {
 		return nil, nil, fmt.Errorf("smb negotiate: %w", err)
 	}
 
-	share, err := session.Mount(opts.share)
-	if err != nil {
-		session.Logoff()
-		conn.Close()
-		return nil, nil, fmt.Errorf("mount share %s: %w", opts.share, err)
-	}
-
 	cleanup := func() {
-		share.Umount()
 		session.Logoff()
 		conn.Close()
 	}
 
-	return share, cleanup, nil
+	return session, cleanup, nil
 }
 
 func listRemote(share *smb2.Share, remote string) error {
@@ -233,4 +284,60 @@ func normalizeRemotePath(p string) string {
 		return "."
 	}
 	return strings.TrimPrefix(clean, "/")
+}
+
+func splitServerAddress(address string) (string, string, error) {
+	if address == "" {
+		return "", "", fmt.Errorf("server address is required")
+	}
+
+	if strings.HasPrefix(address, "[") && strings.HasSuffix(address, "]") {
+		return strings.Trim(address, "[]"), "445", nil
+	}
+
+	host, port, err := net.SplitHostPort(address)
+	if err == nil {
+		if port == "" {
+			port = "445"
+		}
+		return host, port, nil
+	}
+
+	var addrErr *net.AddrError
+	if errors.As(err, &addrErr) && strings.Contains(addrErr.Err, "missing port in address") {
+		if strings.HasPrefix(address, "[") {
+			return strings.Trim(address, "[]"), "445", nil
+		}
+		return address, "445", nil
+	}
+
+	if ip := net.ParseIP(address); ip != nil {
+		return address, "445", nil
+	}
+
+	return "", "", fmt.Errorf("parse server address %q: %w", address, err)
+}
+
+func listShares(opts smbOptions) error {
+	session, cleanup, err := dialSession(opts)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	names, err := session.ListSharenames()
+	if err != nil {
+		return fmt.Errorf("list shares: %w", err)
+	}
+
+	if len(names) == 0 {
+		fmt.Println("No shares found.")
+		return nil
+	}
+
+	sort.Strings(names)
+	for _, name := range names {
+		fmt.Println(name)
+	}
+	return nil
 }
