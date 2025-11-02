@@ -46,20 +46,44 @@ jobs:
         include:
           - goos: linux
             goarch: amd64
+            goarm: ''
             suffix: ''
+            artifact: smbput-linux-amd64
+          - goos: linux
+            goarch: arm
+            goarm: '5'
+            suffix: '-armv5'
+            artifact: smbput-linux-arm-v5
+          - goos: linux
+            goarch: arm
+            goarm: '6'
+            suffix: '-armv6'
+            artifact: smbput-linux-arm-v6
           - goos: linux
             goarch: arm
             goarm: '7'
-            suffix: '-arm'
+            suffix: '-armv7'
+            artifact: smbput-linux-arm-v7
           - goos: linux
             goarch: arm64
+            goarm: ''
             suffix: '-arm64'
+            artifact: smbput-linux-arm64
           - goos: darwin
             goarch: amd64
-            suffix: '-macos'
+            goarm: ''
+            suffix: '-macos-amd64'
+            artifact: smbput-darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            goarm: ''
+            suffix: '-macos-arm64'
+            artifact: smbput-darwin-arm64
           - goos: windows
             goarch: amd64
+            goarm: ''
             suffix: '.exe'
+            artifact: smbput-windows-amd64
 
     steps:
       - name: Checkout code
@@ -104,7 +128,7 @@ jobs:
       - name: Upload standard binary
         uses: actions/upload-artifact@v4
         with:
-          name: smbput-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm && format('-v{0}', matrix.goarm) || '' }}
+          name: ${{ matrix.artifact }}
           path: smbput${{ matrix.suffix }}
           retention-days: 30
 
@@ -159,10 +183,13 @@ jobs:
             ### Available builds:
             - `smbput-linux-amd64` - Linux x86-64 (optimized)
             - `smbput-linux-amd64-upx` - Linux x86-64 (UPX compressed)
-            - `smbput-linux-arm-v7` - Linux ARM 32-bit (Raspberry Pi)
-            - `smbput-linux-arm64` - Linux ARM 64-bit
-            - `smbput-darwin-amd64` - macOS
-            - `smbput-windows-amd64` - Windows
+            - `smbput-linux-arm-v5` - Linux ARMv5 (soft-float)
+            - `smbput-linux-arm-v6` - Linux ARMv6 (soft-float)
+            - `smbput-linux-arm-v7` - Linux ARMv7 (hard-float)
+            - `smbput-linux-arm64` - Linux ARM64
+            - `smbput-darwin-amd64` - macOS Intel
+            - `smbput-darwin-arm64` - macOS Apple Silicon
+            - `smbput-windows-amd64` - Windows x86-64
 
             ### Usage:
             ```bash
