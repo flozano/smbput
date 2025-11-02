@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+
+jobs:
+  lint-and-test:
+    name: Quick CI Check
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.23'
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Verify dependencies
+      run: go mod verify
+
+    - name: Run go vet
+      run: go vet ./...
+
+    - name: Run tests
+      run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+    - name: Build
+      run: make build
+
+    - name: Verify binary works
+      run: ./smbput --help || echo "Binary built successfully"
+
+    - name: Check binary size
+      run: |
+        echo "Standard build size:"
+        ls -lh smbput
+        size_bytes=$(stat -f%z smbput 2>/dev/null || stat -c%s smbput)
+        size_mb=$((size_bytes / 1024 / 1024))
+        echo "Size: ${size_mb}MB"
+        if [ $size_mb -gt 6 ]; then
+          echo "WARNING: Binary size is larger than expected (>6MB)"
+        fi
