@@ -122,14 +122,23 @@ jobs:
       - name: Compress binary with UPX
         if: matrix.goos == 'linux'
         run: |
-          upx --best --lzma smbput${{ matrix.suffix }}
-          ls -lh smbput${{ matrix.suffix }}
+          cp smbput${{ matrix.suffix }} smbput${{ matrix.suffix }}-upx
+          upx --best --lzma smbput${{ matrix.suffix }}-upx
+          ls -lh smbput${{ matrix.suffix }} smbput${{ matrix.suffix }}-upx
 
       - name: Upload standard binary
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
           path: smbput${{ matrix.suffix }}
+          retention-days: 30
+
+      - name: Upload UPX binary
+        if: matrix.goos == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-upx
+          path: smbput${{ matrix.suffix }}-upx
           retention-days: 30
 
   release:
@@ -168,14 +177,14 @@ jobs:
           body: |
             ## SMB Client Release
 
-            All Linux artifacts are shipped UPX-compressed for minimal size.
+            Each Linux release includes both the standard binary and a UPX-compressed variant.
 
             ### Available builds:
-            - `smbput-linux-amd64` - Linux x86-64 (UPX compressed)
-            - `smbput-linux-arm-v5` - Linux ARMv5 (UPX compressed, soft-float)
-            - `smbput-linux-arm-v6` - Linux ARMv6 (UPX compressed, soft-float)
-            - `smbput-linux-arm-v7` - Linux ARMv7 (UPX compressed, hard-float)
-            - `smbput-linux-arm64` - Linux ARM64 (UPX compressed)
+            - `smbput-linux-amd64` / `smbput-linux-amd64-upx` - Linux x86-64 (plain & UPX)
+            - `smbput-linux-arm-v5` / `smbput-linux-arm-v5-upx` - Linux ARMv5 (plain & UPX)
+            - `smbput-linux-arm-v6` / `smbput-linux-arm-v6-upx` - Linux ARMv6 (plain & UPX)
+            - `smbput-linux-arm-v7` / `smbput-linux-arm-v7-upx` - Linux ARMv7 (plain & UPX)
+            - `smbput-linux-arm64` / `smbput-linux-arm64-upx` - Linux ARM64 (plain & UPX)
             - `smbput-darwin-amd64` - macOS Intel
             - `smbput-darwin-arm64` - macOS Apple Silicon
             - `smbput-windows-amd64` - Windows x86-64
