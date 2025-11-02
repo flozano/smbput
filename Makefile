@@ -3,13 +3,24 @@
 # Binary name
 BINARY := smbput
 
+# Target platform (defaults to host toolchain)
+TARGET_OS ?= $(shell go env GOOS)
+TARGET_ARCH ?= $(shell go env GOARCH)
+
 # Build flags for minimal binary size
-LDFLAGS := -s -w
 GOFLAGS := -trimpath
-BUILDTAGS :=
+LDFLAGS := -s -w
+BUILDTAGS := netgo osusergo
+
+# Enable fully static binaries on Linux (CGO disabled everywhere)
+CGO_ENABLED := 0
+ifeq ($(TARGET_OS),linux)
+LDFLAGS += -extldflags=-static
+endif
 
 # Go build command with optimizations
-GOBUILD := CGO_ENABLED=0 go build $(GOFLAGS) -ldflags="$(LDFLAGS)" $(if $(BUILDTAGS),-tags $(BUILDTAGS))
+GOBUILD := CGO_ENABLED=$(CGO_ENABLED) GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH) \
+	go build $(GOFLAGS) -ldflags="$(LDFLAGS)" $(if $(BUILDTAGS),-tags '$(BUILDTAGS)')
 
 # Default target: build optimized binary
 .PHONY: all
@@ -23,14 +34,24 @@ build:
 	@ls -lh $(BINARY)
 	@echo "Build complete!"
 
+# Build optimized binary without inlining (smaller, slower)
+.PHONY: build-noinline
+build-noinline:
+	@echo "Building optimized $(BINARY) without inlining..."
+	@$(GOBUILD) -gcflags="all=-l" -o $(BINARY)
+	@ls -lh $(BINARY)
+	@echo "No-inline build complete!"
+
 # Build with even more aggressive optimizations (experimental)
 .PHONY: build-aggressive
 build-aggressive:
 	@echo "Building with aggressive optimizations..."
-	@CGO_ENABLED=0 go build \
+	@CGO_ENABLED=$(CGO_ENABLED) GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH) \
+		go build \
 		-trimpath \
-		-ldflags="-s -w -extldflags=-static" \
+		-ldflags="$(LDFLAGS)" \
 		-gcflags="all=-l -B" \
+		$(if $(BUILDTAGS),-tags '$(BUILDTAGS)') \
 		-o $(BINARY)
 	@ls -lh $(BINARY)
 	@echo "Aggressive build complete!"
@@ -77,7 +98,8 @@ build-arm:
 	@echo "Building for ARM (32-bit)..."
 	@CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build \
 		-trimpath \
-		-ldflags="$(LDFLAGS)" \
+		-ldflags="-s -w -extldflags=-static" \
+		-tags 'netgo osusergo' \
 		-o $(BINARY)-arm
 	@ls -lh $(BINARY)-arm
 	@echo "ARM build complete!"
@@ -88,7 +110,8 @@ build-arm64:
 	@echo "Building for ARM64..."
 	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
 		-trimpath \
-		-ldflags="$(LDFLAGS)" \
+		-ldflags="-s -w -extldflags=-static" \
+		-tags 'netgo osusergo' \
 		-o $(BINARY)-arm64
 	@ls -lh $(BINARY)-arm64
 	@echo "ARM64 build complete!"
@@ -99,7 +122,8 @@ build-windows:
 	@echo "Building for Windows..."
 	@CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build \
 		-trimpath \
-		-ldflags="$(LDFLAGS)" \
+		-ldflags="-s -w" \
+		-tags 'netgo osusergo' \
 		-o $(BINARY).exe
 	@ls -lh $(BINARY).exe
 	@echo "Windows build complete!"
@@ -110,7 +134,8 @@ build-macos:
 	@echo "Building for macOS..."
 	@CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build \
 		-trimpath \
-		-ldflags="$(LDFLAGS)" \
+		-ldflags="-s -w" \
+		-tags 'netgo osusergo' \
 		-o $(BINARY)-macos
 	@ls -lh $(BINARY)-macos
 	@echo "macOS build complete!"
@@ -140,7 +165,8 @@ size-comparison:
 	@echo "Building with different optimization levels..."
 	@echo ""
 	@echo "1. Standard build (with debug info):"
-	@go build -o $(BINARY)-standard
+	@CGO_ENABLED=$(CGO_ENABLED) GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH) \
+		go build -o $(BINARY)-standard
 	@ls -lh $(BINARY)-standard | awk '{print $$5 " - Standard build"}'
 	@echo ""
 	@echo "2. Optimized build (-ldflags=\"-s -w\" -trimpath):"
@@ -148,7 +174,10 @@ size-comparison:
 	@ls -lh $(BINARY)-optimized | awk '{print $$5 " - Optimized build"}'
 	@echo ""
 	@echo "3. Aggressive build:"
-	@CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -extldflags=-static" -gcflags="all=-l -B" -o $(BINARY)-aggressive
+	@CGO_ENABLED=$(CGO_ENABLED) GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH) \
+		go build -trimpath -ldflags="$(LDFLAGS)" -gcflags="all=-l -B" \
+		$(if $(BUILDTAGS),-tags '$(BUILDTAGS)') \
+		-o $(BINARY)-aggressive
 	@ls -lh $(BINARY)-aggressive | awk '{print $$5 " - Aggressive build"}'
 	@echo ""
 	@if command -v upx >/dev/null 2>&1; then \
@@ -187,6 +216,7 @@ deps:
 help:
 	@echo "Available targets:"
 	@echo "  make build              - Build optimized binary (default)"
+	@echo "  make build-noinline     - Build optimized binary without inlining"
 	@echo "  make build-aggressive   - Build with aggressive optimizations"
 	@echo "  make install-upx        - Install UPX compression tool"
 	@echo "  make build-upx          - Build and compress with UPX"
@@ -202,3 +232,6 @@ help:
 	@echo "  make uninstall          - Remove binary from /usr/local/bin"
 	@echo "  make deps               - Download and verify dependencies"
 	@echo "  make help               - Show this help message"
+	@echo ""
+	@echo "Environment overrides:"
+	@echo "  TARGET_OS, TARGET_ARCH  - Override target platform (defaults to host)"
