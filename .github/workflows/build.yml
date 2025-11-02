@@ -2,11 +2,15 @@ name: Build and Release
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+      - 'release/**'
     tags:
       - 'v*'
   pull_request:
-    branches: [ main ]
+    branches:
+      - main
+      - 'release/**'
 
 jobs:
   tests:
@@ -38,9 +42,10 @@ jobs:
         run: make test-integration
 
   build:
-    name: Build and Test
+    name: Build and Upload Artifacts
     needs: tests
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
     strategy:
       matrix:
         include:
@@ -180,10 +185,10 @@ jobs:
           if git describe --tags --abbrev=0 --exclude "${CURRENT_TAG}" >/tmp/prev_tag 2>/dev/null; then
             PREV_TAG=$(cat /tmp/prev_tag)
             NOTES=$(git log ${PREV_TAG}..${CURRENT_TAG} --pretty=format:'- %s (@%an)')
-            printf 'notes<<EOF\nChanges since %s:%s%s\nEOF\n' "$PREV_TAG" "\n" "$NOTES" >> "$GITHUB_OUTPUT"
+            printf 'notes<<EOF\nChanges since %s:\n%s\nEOF\n' "$PREV_TAG" "$NOTES" >> "$GITHUB_OUTPUT"
           else
             NOTES=$(git log --pretty=format:'- %s (@%an)')
-            printf 'notes<<EOF\nInitial release:%s%s\nEOF\n' "\n" "$NOTES" >> "$GITHUB_OUTPUT"
+            printf 'notes<<EOF\nInitial release:\n%s\nEOF\n' "$NOTES" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Create Release
