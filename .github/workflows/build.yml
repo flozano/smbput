@@ -98,16 +98,20 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-          GOARM: ${{ matrix.goarm }}
         run: |
+          if [ -n "${{ matrix.goarm }}" ]; then
+            export GOARM='${{ matrix.goarm }}'
+          else
+            unset GOARM
+          fi
           CGO_ENABLED=0 go build \
             -trimpath \
             -ldflags="-s -w" \
             -o smbput${{ matrix.suffix }}
           ls -lh smbput${{ matrix.suffix }}
 
-      - name: Install UPX (Linux amd64 only)
-        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+      - name: Install UPX (Linux targets)
+        if: matrix.goos == 'linux'
         run: |
           curl -L -o /tmp/upx.tar.xz https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-amd64_linux.tar.xz
           cd /tmp
@@ -115,29 +119,17 @@ jobs:
           sudo install -m 755 upx-4.2.4-amd64_linux/upx /usr/local/bin/
           upx --version
 
-      - name: Compress with UPX (Linux amd64 only)
-        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+      - name: Compress binary with UPX
+        if: matrix.goos == 'linux'
         run: |
-          cp smbput smbput-upx
-          upx --best --lzma smbput-upx
-          echo "Original size:"
-          ls -lh smbput
-          echo "UPX compressed size:"
-          ls -lh smbput-upx
+          upx --best --lzma smbput${{ matrix.suffix }}
+          ls -lh smbput${{ matrix.suffix }}
 
       - name: Upload standard binary
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
           path: smbput${{ matrix.suffix }}
-          retention-days: 30
-
-      - name: Upload UPX binary
-        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
-        uses: actions/upload-artifact@v4
-        with:
-          name: smbput-linux-amd64-upx
-          path: smbput-upx
           retention-days: 30
 
   release:
@@ -176,17 +168,14 @@ jobs:
           body: |
             ## SMB Client Release
 
-            Binary size comparison (Linux amd64):
-            - Standard optimized: ~3.4MB
-            - UPX compressed: ~1.5MB (55% smaller!)
+            All Linux artifacts are shipped UPX-compressed for minimal size.
 
             ### Available builds:
-            - `smbput-linux-amd64` - Linux x86-64 (optimized)
-            - `smbput-linux-amd64-upx` - Linux x86-64 (UPX compressed)
-            - `smbput-linux-arm-v5` - Linux ARMv5 (soft-float)
-            - `smbput-linux-arm-v6` - Linux ARMv6 (soft-float)
-            - `smbput-linux-arm-v7` - Linux ARMv7 (hard-float)
-            - `smbput-linux-arm64` - Linux ARM64
+            - `smbput-linux-amd64` - Linux x86-64 (UPX compressed)
+            - `smbput-linux-arm-v5` - Linux ARMv5 (UPX compressed, soft-float)
+            - `smbput-linux-arm-v6` - Linux ARMv6 (UPX compressed, soft-float)
+            - `smbput-linux-arm-v7` - Linux ARMv7 (UPX compressed, hard-float)
+            - `smbput-linux-arm64` - Linux ARM64 (UPX compressed)
             - `smbput-darwin-amd64` - macOS Intel
             - `smbput-darwin-arm64` - macOS Apple Silicon
             - `smbput-windows-amd64` - Windows x86-64
