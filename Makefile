@@ -104,6 +104,30 @@ build-arm:
 	@ls -lh $(BINARY)-arm
 	@echo "ARM build complete!"
 
+# Cross-compile for ARMv5
+.PHONY: build-armv5
+build-armv5:
+	@echo "Building for ARMv5..."
+	@CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=5 go build \
+		-trimpath \
+		-ldflags="-s -w -extldflags=-static" \
+		-tags 'netgo osusergo' \
+		-o $(BINARY)-armv5
+	@ls -lh $(BINARY)-armv5
+	@echo "ARMv5 build complete!"
+
+# Cross-compile for ARMv6
+.PHONY: build-armv6
+build-armv6:
+	@echo "Building for ARMv6..."
+	@CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=6 go build \
+		-trimpath \
+		-ldflags="-s -w -extldflags=-static" \
+		-tags 'netgo osusergo' \
+		-o $(BINARY)-armv6
+	@ls -lh $(BINARY)-armv6
+	@echo "ARMv6 build complete!"
+
 # Cross-compile for 64-bit ARM (ARM64)
 .PHONY: build-arm64
 build-arm64:
@@ -142,7 +166,7 @@ build-macos:
 
 # Build for all platforms
 .PHONY: build-all
-build-all: build build-arm build-arm64 build-windows build-macos
+build-all: build build-armv5 build-armv6 build-arm build-arm64 build-windows build-macos
 	@echo "All builds complete!"
 	@ls -lh $(BINARY)*
 
@@ -220,6 +244,8 @@ help:
 	@echo "  make build-aggressive   - Build with aggressive optimizations"
 	@echo "  make install-upx        - Install UPX compression tool"
 	@echo "  make build-upx          - Build and compress with UPX"
+	@echo "  make build-armv5        - Cross-compile for ARMv5"
+	@echo "  make build-armv6        - Cross-compile for ARMv6"
 	@echo "  make build-arm          - Cross-compile for 32-bit ARM"
 	@echo "  make build-arm64        - Cross-compile for 64-bit ARM"
 	@echo "  make build-windows      - Cross-compile for Windows"
