@@ -1,6 +1,6 @@
 module smbput
 
-go 1.23
+go 1.25
 
 require (
 	github.com/hirochachacha/go-smb2 v1.1.0
