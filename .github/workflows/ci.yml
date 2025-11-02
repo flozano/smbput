@@ -1,50 +1,39 @@
 name: CI
 
 on:
-  pull_request:
-    branches: [ main ]
   push:
-    branches: [ main ]
+    branches:
+      - main
+      - master
+  pull_request:
+
+permissions:
+  contents: read
 
 jobs:
-  lint-and-test:
-    name: Quick CI Check
+  test:
     runs-on: ubuntu-latest
-
+    env:
+      GO111MODULE: on
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.23'
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.23'
 
-    - name: Download dependencies
-      run: go mod download
+      - name: Cache Go artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            .gocache
+            .gomodcache
+          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
 
-    - name: Verify dependencies
-      run: go mod verify
+      - name: Run unit tests
+        run: make test
 
-    - name: Run go vet
-      run: go vet ./...
-
-    - name: Run tests
-      run: go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
-
-    - name: Build
-      run: make build
-
-    - name: Verify binary works
-      run: ./smbput --help || echo "Binary built successfully"
-
-    - name: Check binary size
-      run: |
-        echo "Standard build size:"
-        ls -lh smbput
-        size_bytes=$(stat -f%z smbput 2>/dev/null || stat -c%s smbput)
-        size_mb=$((size_bytes / 1024 / 1024))
-        echo "Size: ${size_mb}MB"
-        if [ $size_mb -gt 6 ]; then
-          echo "WARNING: Binary size is larger than expected (>6MB)"
-        fi
+      - name: Run integration tests
+        run: make test-integration

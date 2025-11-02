@@ -3,6 +3,10 @@
 # Binary name
 BINARY := smbput
 
+# Local Go environment directories to avoid global cache writes
+GOENV := GOCACHE=$(CURDIR)/.gocache GOMODCACHE=$(CURDIR)/.gomodcache
+GO := $(GOENV) go
+
 # Target platform (defaults to host toolchain)
 TARGET_OS ?= $(shell go env GOOS)
 TARGET_ARCH ?= $(shell go env GOARCH)
@@ -19,7 +23,7 @@ LDFLAGS += -extldflags=-static
 endif
 
 # Go build command with optimizations
-GOBUILD := CGO_ENABLED=$(CGO_ENABLED) GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH) \
+GOBUILD := $(GOENV) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH) \
 	go build $(GOFLAGS) -ldflags="$(LDFLAGS)" $(if $(BUILDTAGS),-tags '$(BUILDTAGS)')
 
 # Default target: build optimized binary
@@ -46,7 +50,7 @@ build-noinline:
 .PHONY: build-aggressive
 build-aggressive:
 	@echo "Building with aggressive optimizations..."
-	@CGO_ENABLED=$(CGO_ENABLED) GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH) \
+	@$(GOENV) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH) \
 		go build \
 		-trimpath \
 		-ldflags="$(LDFLAGS)" \
@@ -96,7 +100,7 @@ build-upx: build
 .PHONY: build-arm
 build-arm:
 	@echo "Building for ARM (32-bit)..."
-	@CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build \
+	@$(GOENV) CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build \
 		-trimpath \
 		-ldflags="-s -w -extldflags=-static" \
 		-tags 'netgo osusergo' \
@@ -108,7 +112,7 @@ build-arm:
 .PHONY: build-armv5
 build-armv5:
 	@echo "Building for ARMv5..."
-	@CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=5 go build \
+	@$(GOENV) CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=5 go build \
 		-trimpath \
 		-ldflags="-s -w -extldflags=-static" \
 		-tags 'netgo osusergo' \
@@ -120,7 +124,7 @@ build-armv5:
 .PHONY: build-armv6
 build-armv6:
 	@echo "Building for ARMv6..."
-	@CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=6 go build \
+	@$(GOENV) CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=6 go build \
 		-trimpath \
 		-ldflags="-s -w -extldflags=-static" \
 		-tags 'netgo osusergo' \
@@ -132,7 +136,7 @@ build-armv6:
 .PHONY: build-arm64
 build-arm64:
 	@echo "Building for ARM64..."
-	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
+	@$(GOENV) CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
 		-trimpath \
 		-ldflags="-s -w -extldflags=-static" \
 		-tags 'netgo osusergo' \
@@ -144,7 +148,7 @@ build-arm64:
 .PHONY: build-windows
 build-windows:
 	@echo "Building for Windows..."
-	@CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build \
+	@$(GOENV) CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build \
 		-trimpath \
 		-ldflags="-s -w" \
 		-tags 'netgo osusergo' \
@@ -156,7 +160,7 @@ build-windows:
 .PHONY: build-macos
 build-macos:
 	@echo "Building for macOS..."
-	@CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build \
+	@$(GOENV) CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build \
 		-trimpath \
 		-ldflags="-s -w" \
 		-tags 'netgo osusergo' \
@@ -177,11 +181,24 @@ clean:
 	@rm -f $(BINARY) $(BINARY)-* $(BINARY).exe
 	@echo "Clean complete!"
 
+# Clean Go build caches
+.PHONY: clean-cache
+clean-cache:
+	@echo "Removing local Go caches..."
+	@rm -rf .gocache .gomodcache
+	@echo "Cache clean complete!"
+
 # Run tests
 .PHONY: test
 test:
 	@echo "Running tests..."
-	@go test -v ./...
+	@$(GO) test -v ./...
+
+# Run integration tests (requires Docker)
+.PHONY: test-integration
+test-integration:
+	@echo "Running integration tests (Docker required)..."
+	@$(GO) test -v -tags=integration ./...
 
 # Show build size comparison
 .PHONY: size-comparison
@@ -189,7 +206,7 @@ size-comparison:
 	@echo "Building with different optimization levels..."
 	@echo ""
 	@echo "1. Standard build (with debug info):"
-	@CGO_ENABLED=$(CGO_ENABLED) GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH) \
+	@$(GOENV) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH) \
 		go build -o $(BINARY)-standard
 	@ls -lh $(BINARY)-standard | awk '{print $$5 " - Standard build"}'
 	@echo ""
@@ -198,7 +215,7 @@ size-comparison:
 	@ls -lh $(BINARY)-optimized | awk '{print $$5 " - Optimized build"}'
 	@echo ""
 	@echo "3. Aggressive build:"
-	@CGO_ENABLED=$(CGO_ENABLED) GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH) \
+	@$(GOENV) CGO_ENABLED=$(CGO_ENABLED) GOOS=$(TARGET_OS) GOARCH=$(TARGET_ARCH) \
 		go build -trimpath -ldflags="$(LDFLAGS)" -gcflags="all=-l -B" \
 		$(if $(BUILDTAGS),-tags '$(BUILDTAGS)') \
 		-o $(BINARY)-aggressive
@@ -231,8 +248,8 @@ uninstall:
 .PHONY: deps
 deps:
 	@echo "Downloading dependencies..."
-	@go mod download
-	@go mod verify
+	@$(GO) mod download
+	@$(GO) mod verify
 	@echo "Dependencies ready!"
 
 # Show help
@@ -253,7 +270,9 @@ help:
 	@echo "  make build-all          - Build for all platforms"
 	@echo "  make size-comparison    - Compare different optimization levels"
 	@echo "  make clean              - Remove build artifacts"
+	@echo "  make clean-cache        - Remove local Go build caches"
 	@echo "  make test               - Run tests"
+	@echo "  make test-integration   - Run integration tests (Docker required)"
 	@echo "  make install            - Install binary to /usr/local/bin"
 	@echo "  make uninstall          - Remove binary from /usr/local/bin"
 	@echo "  make deps               - Download and verify dependencies"
