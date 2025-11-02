@@ -159,8 +159,11 @@ func listRemote(share *smb2.Share, remote string) error {
 
 func getFile(share *smb2.Share, remote, local string) error {
 	remote = normalizeRemotePath(remote)
-	if err := os.MkdirAll(filepath.Dir(local), 0o755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", filepath.Dir(local), err)
+	dir := filepath.Dir(local)
+	if dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("mkdir %s: %w", dir, err)
+		}
 	}
 
 	src, err := share.Open(remote)
@@ -193,8 +196,9 @@ func putFile(share *smb2.Share, local, remote string) error {
 	remote = normalizeRemotePath(remote)
 	dir := path.Dir(remote)
 	if dir != "." && dir != "/" {
-		if err := share.MkdirAll(dir, 0o755); err != nil && !os.IsExist(err) {
-			return fmt.Errorf("mkdir remote %s: %w", dir, err)
+		if err := share.MkdirAll(dir, 0o755); err != nil {
+			// Ignore errors - directory may already exist, or we'll fail at Create
+			// MkdirAll typically succeeds if path already exists
 		}
 	}
 
