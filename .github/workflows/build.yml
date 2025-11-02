@@ -153,6 +153,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Checkout history for changelog
+        run: git fetch --prune --unshallow --tags
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -170,12 +173,28 @@ jobs:
           cd ../release
           ls -lh
 
+      - name: Generate release notes
+        id: changelog
+        run: |
+          CURRENT_TAG="${GITHUB_REF##*/}"
+          if git describe --tags --abbrev=0 --exclude "${CURRENT_TAG}" >/tmp/prev_tag 2>/dev/null; then
+            PREV_TAG=$(cat /tmp/prev_tag)
+            NOTES=$(git log ${PREV_TAG}..${CURRENT_TAG} --pretty=format:'- %s (@%an)')
+            printf 'notes<<EOF\nChanges since %s:%s%s\nEOF\n' "$PREV_TAG" "\n" "$NOTES" >> "$GITHUB_OUTPUT"
+          else
+            NOTES=$(git log --pretty=format:'- %s (@%an)')
+            printf 'notes<<EOF\nInitial release:%s%s\nEOF\n' "\n" "$NOTES" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: release/*
           body: |
             ## SMB Client Release
+
+            ### Changes since last release
+            ${{ steps.changelog.outputs.notes }}
 
             Each Linux release includes both the standard binary and a UPX-compressed variant.
 
