@@ -21,8 +21,6 @@ func TestSambaIntegration_ShowsSharesAndTransfersFiles(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	shareDir := t.TempDir()
-
 	req := testcontainers.ContainerRequest{
 		Image:        "dperson/samba",
 		ExposedPorts: []string{"445/tcp"},
@@ -32,9 +30,9 @@ func TestSambaIntegration_ShowsSharesAndTransfersFiles(t *testing.T) {
 			"-u", "testuser;testpass",
 			"-s", "public;/srv/public;yes;no;yes;testuser",
 		},
-		Mounts: testcontainers.Mounts(
-			testcontainers.BindMount(shareDir, testcontainers.ContainerMountTarget("/srv/public")),
-		),
+		Tmpfs: map[string]string{
+			"/srv/public": "rw",
+		},
 	}
 
 	sambaC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
@@ -88,7 +86,18 @@ func TestSambaIntegration_ShowsSharesAndTransfersFiles(t *testing.T) {
 	}
 	defer shareCleanup()
 
-	localTemp := t.TempDir()
+	localTemp := os.Getenv("RUNNER_TEMP")
+	if localTemp == "" {
+		localTemp = t.TempDir()
+	} else {
+		// Scope files to this test to avoid collisions on shared runners.
+		dir, err := os.MkdirTemp(localTemp, "smbput-integration-*")
+		if err != nil {
+			t.Fatalf("create temp dir in RUNNER_TEMP: %v", err)
+		}
+		localTemp = dir
+		t.Cleanup(func() { _ = os.RemoveAll(localTemp) })
+	}
 	putFilePath := filepath.Join(localTemp, "put.txt")
 	const payload = "integration payload"
 	if err := os.WriteFile(putFilePath, []byte(payload), 0o644); err != nil {
