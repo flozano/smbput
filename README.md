@@ -9,9 +9,16 @@
 ```bash
 make build              # Build optimized binary (3.4MB)
 make build-aggressive   # Even smaller binary (3.3MB)
-make build-upx          # Compress with UPX (~1.5MB, requires upx)
+make install-upx        # Install UPX compression tool (optional)
+make build-upx          # Compress with UPX (~1.5MB, 55% smaller!)
 make size-comparison    # Compare optimization levels
 ```
+
+**Size comparison:**
+- Standard build: 5.1MB (with debug info)
+- Optimized build: 3.4MB (33% smaller, `-s -w -trimpath`)
+- Aggressive build: 3.3MB (35% smaller)
+- UPX compressed: ~1.5MB (70% smaller, requires UPX tool)
 
 Cross-compile for other platforms:
 ```bash
@@ -41,6 +48,27 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -ldflags="-s -w" 
 ```
 
 Adjust `GOARM` (5–7) if your target CPU requires it.
+
+### Optional: UPX Compression
+
+For even smaller binaries (~70% size reduction), you can install UPX:
+
+```bash
+# Automatic installation (uses Makefile)
+make install-upx
+
+# Or install manually
+# On Ubuntu/Debian:
+apt-get install upx-ucl
+
+# Or download from:
+# https://github.com/upx/upx/releases
+```
+
+Then build with UPX compression:
+```bash
+make build-upx    # Creates ~1.5MB binary
+```
 
 ## Usage
 

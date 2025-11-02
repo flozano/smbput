@@ -35,6 +35,29 @@ build-aggressive:
 	@ls -lh $(BINARY)
 	@echo "Aggressive build complete!"
 
+# Install UPX compression tool
+.PHONY: install-upx
+install-upx:
+	@echo "Installing UPX..."
+	@if command -v upx >/dev/null 2>&1; then \
+		echo "UPX is already installed: $$(upx --version | head -1)"; \
+	elif command -v curl >/dev/null 2>&1; then \
+		echo "Downloading UPX from GitHub releases..."; \
+		cd /tmp && \
+		curl -L -o upx.tar.xz https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-amd64_linux.tar.xz && \
+		tar -xf upx.tar.xz && \
+		install -m 755 upx-4.2.4-amd64_linux/upx /usr/local/bin/ && \
+		rm -rf upx.tar.xz upx-4.2.4-amd64_linux && \
+		echo "UPX installed successfully: $$(upx --version | head -1)"; \
+	elif command -v apt-get >/dev/null 2>&1; then \
+		echo "Installing via apt-get..."; \
+		apt-get update && apt-get install -y upx-ucl; \
+	else \
+		echo "Cannot install UPX automatically. Please install manually."; \
+		echo "Download from: https://github.com/upx/upx/releases"; \
+		exit 1; \
+	fi
+
 # Build and compress with UPX (requires upx to be installed)
 .PHONY: build-upx
 build-upx: build
@@ -44,7 +67,7 @@ build-upx: build
 		ls -lh $(BINARY); \
 		echo "UPX compression complete!"; \
 	else \
-		echo "UPX not found. Install with: apt-get install upx-ucl"; \
+		echo "UPX not found. Run 'make install-upx' or install with: apt-get install upx-ucl"; \
 		exit 1; \
 	fi
 
@@ -165,6 +188,7 @@ help:
 	@echo "Available targets:"
 	@echo "  make build              - Build optimized binary (default)"
 	@echo "  make build-aggressive   - Build with aggressive optimizations"
+	@echo "  make install-upx        - Install UPX compression tool"
 	@echo "  make build-upx          - Build and compress with UPX"
 	@echo "  make build-arm          - Cross-compile for 32-bit ARM"
 	@echo "  make build-arm64        - Cross-compile for 64-bit ARM"
